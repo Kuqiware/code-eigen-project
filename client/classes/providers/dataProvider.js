@@ -1,9 +1,10 @@
 var moment = require('moment');
-import { isEmpty } from "lodash";
+import { isEmpty, intersection, map, forEach} from "lodash";
 import axios from "axios";
 
 class dataProvider {
     cache = {};
+    cacheSingles = {};
     constructor(){
 
     }
@@ -37,7 +38,9 @@ class dataProvider {
             console.log(error);
         });
     }
+
     deleteCachedItem(id){
+        delete this.cacheSingles[id];
         for(let page in this.cache){
             let result = this.cache[page].find(el => el.id === id);
             if(result){
@@ -49,7 +52,6 @@ class dataProvider {
     }
 
     getAllCachedItems(){
-        if(isEmpty(this.cache)) return [];
         let result = [];
         for(let page in this.cache){
             result = result.concat(this.cache[page]);
@@ -58,12 +60,14 @@ class dataProvider {
     }
 
     getCachedItem(id){
+        if(this.cacheSingles[id]) return this.cacheSingles[id];
         for(let page in this.cache){
             let result = this.cache[page].find(el => el.id == id);
             if(result) return result;
         }
         return null;
     }
+
     async resetCache(){
         this.cache = {};
         await this.onResetCache();
@@ -76,6 +80,11 @@ class dataProvider {
 
     cachePage(page, items){
         if(isEmpty(items)) return;
+        //If a single item is cached, set the reference of the item in the page to the single item cache
+        forEach(
+            intersection(map(items, i => String(i.id)), Object.keys(this.cacheSingles)),
+            id => items = map(items, i => i.id == id ? this.cacheSingles[id] : i)
+        );
         this.cache[page] = items;
         this.cache = Object.keys(this.cache).sort().reduce((r, k) => (r[k] = this.cache[k], r), {});
     }
@@ -93,6 +102,7 @@ class dataProvider {
 
             axios.get(this.baseUri +'page/' + page, await this.getPageAxiosConfig())
             .then((response) => {
+                if(isEmpty(response.data)) return resolve(null);
                 let objects = response.data.map(el => new this.model(el));
                 if(!doCache) return resolve(objects);
                 this.cachePage(page, objects);
@@ -114,6 +124,7 @@ class dataProvider {
 
             axios.get(this.baseUri +'all', await this.getAllAxiosConfig())
             .then((response) => {
+                if(isEmpty(response.data)) return resolve(null);
                 let objects = response.data.map(el => new this.model(el));
                 if(!doCache) return resolve(objects);
                 this.cachePage(0, objects);
@@ -128,11 +139,18 @@ class dataProvider {
         return {};
     }
 
-    async getSingle(id){
+    async getSingle(id, doCache = true){
         return new Promise(async (resolve, reject) => {
+            let cachedItem = this.getCachedItem(id);
+            if(cachedItem) return resolve(cachedItem);
+
             axios.get(this.baseUri + id, await this.getSingleAxiosConfig())
             .then((response) => {
-                resolve(new this.model(response.data));
+                if(isEmpty(response.data)) return resolve(null);
+                let object = new this.model(response.data);
+                if(!doCache) return resolve(object);
+                this.cacheSingle(id, object);
+                resolve(this.getCachedItem(id));
             });
         }).catch((error) => {
             console.log(error);
@@ -141,6 +159,11 @@ class dataProvider {
 
     async getSingleAxiosConfig(){
         return {};
+    }
+
+    cacheSingle(id, object){
+        if(!object || !id) return;
+        this.cacheSingles[id] = object;
     }
 
     async pageExists(page){

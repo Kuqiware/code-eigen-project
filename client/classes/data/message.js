@@ -9,6 +9,7 @@ export default class Message extends dataObject{
     read;
     types;
     sender;
+    
     constructor(data){
         super();
         this.assign(data);

@@ -9,8 +9,7 @@ class dataObject {
         this.convertDates(source);
 
         assignWith(this, source, (objValue, srcValue, key) => {
-            let value = isUndefined(srcValue) ? null : srcValue;
-            return value;
+            return isUndefined(srcValue) ? null : srcValue;
         });
     }
     mapping(){
@@ -23,6 +22,7 @@ class dataObject {
         let dateMap = this.dates();
         if(isEmpty(dateMap)) return;
         for (const [key, value] of Object.entries(source)) {
+            if(!value) continue;
             if(dateMap.includes(key)) source[key] = moment(value);
         }
     }
