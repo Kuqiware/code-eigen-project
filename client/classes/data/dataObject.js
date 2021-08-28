@@ -21,6 +21,7 @@ class DataObject {
     /**
      * Derived classes can implement this method to define how properties need to be mapped from a source object into itself.
      *
+     * @virtual
      * @return {Object} Object containing the mapping, where key is the source property name and where value is the desired property name.
      */
     mapping(){
@@ -30,6 +31,7 @@ class DataObject {
     /**
      * Derived classes can implement this method to define which properties need to be converted into moment objects.
      *
+     * @virtual
      * @return {Array} Array containing names of date time properties.
      */
     dates() {

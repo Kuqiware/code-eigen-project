@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 class ValidateISODateTime
 {
     /**
-     * Handle an incoming request.
+     * Validates the given ISO date formatted property.
      *
      * @param  \Illuminate\Http\Request  $request
      * @param  \Closure  $next

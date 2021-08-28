@@ -1,22 +1,24 @@
-import dataProvider from "./dataProvider";
+import DataProvider from "./dataProvider";
 import Message from "../data/message";
 
 var moment = require('moment');
 
 
-class MessageProvider extends dataProvider{
+class MessageProvider extends DataProvider{
     baseUri = '/api/messages/';
-    olderThan;
     model = Message;
+    pageSize = 10;
+    olderThan;
+
 
     constructor(){
         super();
     }
 
     getMessageWithContent(id){
+        console.log('getcontent');
         return new Promise(async (resolve, reject) => {
-            let item = this.getCachedItem(id);
-            if(!item) return resolve(await this.getSingle(id));
+            let item = await this.getItem(id);
             if(item && item.content) return resolve(item);
 
             axios.get(this.baseUri + id + '/content')

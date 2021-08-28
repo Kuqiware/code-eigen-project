@@ -1,10 +1,15 @@
 var moment = require('moment');
 import { isEmpty, intersection, map} from "lodash";
 import axios from "axios";
+import DataStore from "../stores/dataStore";
 
-class dataProvider {
-    cache = {};
-    cacheSingles = {};
+class DataProvider {
+    dataStore;
+    pageSize = 10;
+
+    constructor(){
+        this.dataStore = this.initDataStore();
+    }
 
     /**
      * @deprecated Old client mock data function
@@ -39,138 +44,68 @@ class dataProvider {
     }
 
     /**
-     * Deletes an item on the API, and in cache.
+     * Derived classes can override this function to use a custom DataStore.
      *
-     * @param {int} id The ID of the item being deleted.
-     *
-     * @return {Promise} Promise which resolves into a boolean. True if the item was deleted, False if the item was not found.
+     * @virtual
+     * @return {DataStore} Returns an instance of a DataStore.
      */
-    deleteItem(id){
-        return new Promise((resolve, reject) => {
-            axios.get(this.baseUri + id + '/delete')
-            .then((response) => {
-                this.deleteCachedItem(id);
-                resolve(true);
-            });
-        }).catch((error) => {
-            console.warn(error);
+    initDataStore(){
+        return new DataStore({
+            key: 'id'
         });
     }
 
     /**
-     * Deletes an item from te cache by ID.
+     * Derived classes can implement this function to add additional axios parameters when retrieving a page from the API.
      *
-     * @param {int} id The ID of the item being deleted.
-     *
-     * @return {bool} True if an item was deleted, false if no item was found.
+     * @virtual
+     * @return {Object} Returns an object containing axios configuration.
      */
-    deleteCachedItem(id){
-        let result = false;
-        if(this.cacheSingles[id]){
-            result = true;
-            delete this.cacheSingles[id];
-        }
-
-        for(let page in this.cache){
-            let result = this.cache[page].find(el => el.id === id);
-            if(result){
-                this.cache[page].splice(this.cache[page].indexOf(result), 1);
-                result = true;
-                break;
-            }
-        }
-        return result;
+    async getPageAxiosConfig(){
+        return {};
     }
 
     /**
-     * Returns an Array containing all cached items.
+     * Derived classes can implement this function to add additional axios parameters when retrieving all items from the API.
      *
-     * @return {Array} Array containing items.
+     * @virtual
+     * @return {Object} Returns an object containing axios configuration.
      */
-    getAllCachedItems(){
-        let result = [];
-        for(let page in this.cache){
-            result = result.concat(this.cache[page]);
-        }
-        return result;
+    async getAllAxiosConfig(){
+        return {};
     }
 
     /**
-     * Get an item from the cache by ID.
+     * Derived classes can implement this function to add additional axios parameters when retrieving a single item from the API.
      *
-     * @param {int} id The ID of the requested item.
-     *
-     * @return {Object} Returns the cached item, or null if not found.
+     * @virtual
+     * @return {Object} Returns an object containing axios configuration.
      */
-    getCachedItem(id){
-        if(this.cacheSingles[id]) return this.cacheSingles[id];
-        for(let page in this.cache){
-            let result = this.cache[page].find(el => el.id == id);
-            if(result) return result;
-        }
-        return null;
+    async getSingleAxiosConfig(){
+        return {};
     }
 
     /**
-     * Clears the cache of all items.
-     */
-    async resetCache(){
-        this.cache = {};
-        this.cacheSingles = {};
-        await this.onResetCache();
-    }
-
-    /**
-     * Hook for derived classes. Called after reseting the cache.
-     */
-    async onResetCache(){
-
-    }
-
-    /**
-     * Caches a single page of items.
-     * @param  {int} page The page number.
-     * @param  {Array} items Array of items.
-     */
-    cachePage(page, items){
-        if(isEmpty(items)) return;
-        items = this.preparePage(items);
-        this.cache[page] = items;
-        this.sortPageCache();
-    }
-
-    /**
-     * Prepares an array of items to be cached as a page.
+     * Deletes an item on the API, and in cache.
      *
-     * If an item in items is already cached, the reference in the array of items needs to be set to the cached item.
+     * @param {String|int} keyValue The key value of the item being deleted.
      *
-     * @param  {Array} items The array of items to be prepared for caching.
-     *
-     * @return {Array} Returns the array of items after preparing it for caching.
+     * @return {Promise} Promise which resolves into a boolean. True if the item was deleted, False if the item was not found.
      */
-    preparePage(items){
-        let existingSingles = intersection(map(items, i => String(i.id)), Object.keys(this.cacheSingles));
-        return map(items, i => existingSingles.includes(String(i.id)) ? this.cacheSingles[i.id] : i);
-    }
-
-    /**
-     * Sorts all pages in the cache by page number
-     */
-    sortPageCache(){
-        this.cache = Object.keys(this.cache).sort().reduce((r, k) => (r[k] = this.cache[k], r), {});
-    }
-
-    /**
-     * Retrieves an already cached page.
-     *
-     * @param  {int} page The page number.
-     *
-     * @return {Array} Returns an array of items.
-     */
-    getCachedPage(page){
-        if(isEmpty(this.cache)) return [];
-        if(!this.cache[page]) return [];
-        return this.cache[page];
+    deleteItem(keyValue){
+        return new Promise((resolve, reject) => {
+            axios.get(this.baseUri + keyValue + '/delete')
+            .then((response) => {
+                this.dataStore.deleteCachedItem(keyValue);
+                resolve(true);
+            })
+            .catch((error) => {
+                console.warn(error);
+                resolve(false);
+            });
+        }).catch((error) => {
+            console.warn(error);
+        });
     }
 
     /**
@@ -184,7 +119,7 @@ class dataProvider {
      */
     getPage(page, doCache = true){
         return new Promise(async (resolve, reject) => {
-            let cachedPage = this.getCachedPage(page);
+            let cachedPage = this.dataStore.getCachedPage(page, this.pageSize);
             if(!isEmpty(cachedPage)) return resolve(cachedPage);
 
             axios.get(this.baseUri +'page/' + page, await this.getPageAxiosConfig())
@@ -192,8 +127,12 @@ class dataProvider {
                 if(isEmpty(response.data)) return resolve(null);
                 let objects = response.data.map(el => new this.model(el));
                 if(!doCache) return resolve(objects);
-                this.cachePage(page, objects);
-                resolve(this.getCachedPage(page));
+                this.dataStore.cachePage(objects);
+                resolve(this.dataStore.getCachedPage(page, this.pageSize));
+            })
+            .catch((error) => {
+                console.warn(error);
+                resolve(null);
             });
         }).catch((error) => {
             console.warn(error);
@@ -201,26 +140,26 @@ class dataProvider {
     }
 
     /**
-     * Derived classes can implement this function to add additional axios parameters when retrieving a page from the API.
+     * Retrieves all items from the API. If any items are cached, the cache will be returned.
+     * By default, the retrieved items will be cached.
      *
-     * @return {Object} Returns an object containing axios configuration.
+     * @param {String|int} keyValue The key value of the item being deleted.
+     * @param  {boolean} [doCache=true] If the items should be cached or not.
+     *
+     * @return {Promise} Promise which resolves an Array of items or null if none are found.
      */
-    async getPageAxiosConfig(){
-        return {};
-    }
-
     getAll(doCache = true){
         return new Promise(async (resolve, reject) => {
-            let cachedPage = this.getCachedPage(0);
-            if(!isEmpty(cachedPage)) return resolve(cachedPage);
+            let cache = this.dataStore.getAllCachedItems();
+            if(!isEmpty(cache)) return resolve(cache);
 
             axios.get(this.baseUri +'all', await this.getAllAxiosConfig())
             .then((response) => {
                 if(isEmpty(response.data)) return resolve(null);
                 let objects = response.data.map(el => new this.model(el));
                 if(!doCache) return resolve(objects);
-                this.cachePage(0, objects);
-                resolve(this.getCachedPage(0));
+                this.dataStore.cachePage(objects);
+                resolve(this.dataStore.getAllCachedItems());
             });
         }).catch((error) => {
             console.warn(error);
@@ -228,50 +167,34 @@ class dataProvider {
     }
 
     /**
-     * Derived classes can implement this function to add additional axios parameters when retrieving all items from the API.
+     * Retrieves a single item from the API. If the item is already cached, this function will return the item from the cache.
+     * By default, the retrieved item will be cached.
      *
-     * @return {Object} Returns an object containing axios configuration.
+     * @param {String|int} keyValue The key value of the item being deleted.
+     * @param  {boolean} [doCache=true] If the item should be cached or not.
+     *
+     * @return {Promise} Promise which resolves a single item or null if not found.
      */
-    async getAllAxiosConfig(){
-        return {};
-    }
-
-    async getSingle(id, doCache = true){
+    getItem(keyValue, doCache = true){
         return new Promise(async (resolve, reject) => {
-            let cachedItem = this.getCachedItem(id);
+            let cachedItem = this.dataStore.getCachedItem(keyValue);
             if(cachedItem) return resolve(cachedItem);
 
-            axios.get(this.baseUri + id, await this.getSingleAxiosConfig())
+            axios.get(this.baseUri + keyValue, await this.getSingleAxiosConfig())
             .then((response) => {
                 if(isEmpty(response.data)) return resolve(null);
                 let object = new this.model(response.data);
                 if(!doCache) return resolve(object);
-                this.cacheSingle(id, object);
-                resolve(this.getCachedItem(id));
+                this.dataStore.cacheItem(object);
+                resolve(this.dataStore.getCachedItem(keyValue));
+            })
+            .catch((error) => {
+                console.warn(error);
+                resolve(null);
             });
         }).catch((error) => {
             console.warn(error);
         });
-    }
-
-    /**
-     * Derived classes can implement this function to add additional axios parameters when retrieving a single item from the API.
-     *
-     * @return {Object} Returns an object containing axios configuration.
-     */
-    async getSingleAxiosConfig(){
-        return {};
-    }
-
-    /**
-     * Caches a single item.
-     *
-     * @param {int} id ID of the object being cached.
-     * @param {Object} object The object being cached.
-     */
-    cacheSingle(id, object){
-        if(!object || !id) return;
-        this.cacheSingles[id] = object;
     }
 
     /**
@@ -286,4 +209,4 @@ class dataProvider {
     }
 }
 
-export default dataProvider;
+export default DataProvider;
