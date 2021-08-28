@@ -16,7 +16,6 @@ class MessageProvider extends DataProvider{
     }
 
     getMessageWithContent(id){
-        console.log('getcontent');
         return new Promise(async (resolve, reject) => {
             let item = await this.getItem(id);
             if(item && item.content) return resolve(item);
@@ -27,7 +26,7 @@ class MessageProvider extends DataProvider{
                 resolve(item);
             });
         }).catch((error) => {
-            console.log(error);
+            console.warn(error);
         });
     }
 
